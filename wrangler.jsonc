@@ -4,6 +4,8 @@
   "main": "cloudflare/worker.ts",
   "compatibility_date": "2026-09-18",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
   "vars": {
     "NODE_ENV": "production"
   },
