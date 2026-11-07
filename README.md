@@ -62,7 +62,7 @@ Cloudflare 版只支持一个全局洛雪源。脚本会在构建时下载并编
 | --- | --- | --- |
 | 安装命令 | `npm install --include=dev` | 需要 devDependencies 中的 esbuild |
 | 构建命令 | `npm run edgeone:build` | 生成 `cloud-functions/[[default]].js` |
-| 输出目录 | `public` | 登录页等静态资源 |
+| 输出目录 | `public` | 登录页等静态资源（`styles.css` 由 `npm run build:css` 从 `web/styles.css` 编译，已提交） |
 | Node 版本 | `22.11.0` | 云函数运行时 |
 
 3. 推送 `main` 即触发构建与部署，构建日志和函数日志都可以在控制台查看。
@@ -186,13 +186,9 @@ Aduoer 中填写同一地址，并使用页面生成的 Token
 
 洛雪源仅用于音频获取（`/v1/track/url`）。自定义源会作为受信任代码运行，请勿配置未经审核的脚本。
 
-酷狗登录可选择「酷狗音乐标准版」或「酷狗概念版」，默认标准版。版本随账号 Cookie 中的 `KUGOU_API_PLATFORM=standard|lite` 一起持久化；旧账号未标记时按标准版处理。登录、刷新、签名、云歌单加密和播放请求均按账号版本选择配置，可同时使用两版账号。重新登录沿用原有版本，其他版本请新增账号；两版 token 不通用。`KUGOU_PLATFORM` 全局环境变量不再用于选择账号版本。
-
-QQ 音乐、网易云音乐、酷狗音乐均支持洛雪源。酷狗兼容脚本声明的 `kg` / `kugou`，使用歌曲 hash 获取音频，支持标准、高品质、无损与 Hi-Res（`flac24bit`，也兼容 `hires`）。每个音质先尝试洛雪，再尝试官方；两者失败后按歌曲可用音质降级。已有酷狗账号若关闭了「使用洛雪源」，可在账号配置页开启；新建账号默认开启。Node、Docker、桌面版支持账号源，Cloudflare、EdgeOne 使用构建时配置的全局源。
-
 ### 账号管理
 
-配置 `ADMIN_MANAGEMENT_PASSWORD` 后，网页右上角会显示“管理员模式”。输入密钥后可查看和管理全部账号，刷新或关闭页面后需重新验证；也可点击退出。未配置或值为空时无法进入。桌面版默认具有全部账号管理能力，无需管理员密码。
+配置 `ADMIN_MANAGEMENT_PASSWORD` 后，网页顶部导航右侧会显示“管理员模式”。输入密钥后可查看和管理全部账号，刷新或关闭页面后需重新验证；也可点击退出。未配置或值为空时无法进入。桌面版默认具有全部账号管理能力，无需管理员密码。
 
 Docker 在 `.env` 中填写此变量并重建容器（`docker compose up -d --force-recreate`）。Cloudflare 在 Worker 的 **Settings → Variables and Secrets** 中添加同名 Secret 并部署，或运行 `npx wrangler secret put ADMIN_MANAGEMENT_PASSWORD`。这是运行时密钥，不是洛雪源构建变量；本地 Wrangler 开发可写入 `.dev.vars`。
 

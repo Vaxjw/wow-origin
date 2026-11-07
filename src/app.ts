@@ -411,14 +411,15 @@ class MultiPlatformServer {
           existing.cookie = session.cookie;
           existing.stateless = session.stateless;
           existing.useLuoxue = session.useLuoxue;
+          existing.audioSourcePriority = session.audioSourcePriority;
           existing.lxSource = session.lxSource;
           existing.deviceId = session.deviceId;
           existing.deviceState = session.deviceState;
-          existing.kugouState = session.kugouState;
           if (cookieChanged) {
             // 其他实例更新了 Cookie，旧实例的收藏缓存必须失效。
             existing.favoriteTrackIds.clear();
             existing.userPlaylistIds.clear();
+            existing.kugouState = undefined;
             existing.kugouPlaylists = undefined;
             existing.kugouPlaylistsLoading = undefined;
             existing.playlistFavorites.clear();

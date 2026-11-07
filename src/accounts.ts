@@ -1,4 +1,4 @@
-import { type KugouAccountContext, type KugouAccountState, normalizeKugouState, kugouUserId, kugouEdition } from './kugouState';
+import { type KugouAccountContext, kugouUserId, kugouEdition } from './kugouState';
 import { PlaylistFavorites } from './playlistFavorites';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -12,11 +12,15 @@ export interface RawMusicAccount {
   api_access_key?: unknown;
   stateless?: unknown;
   useLuoxue?: unknown;
+  audioSourcePriority?: unknown;
   lxSource?: unknown;
   deviceId?: unknown;
   deviceState?: unknown;
-  kugouState?: unknown;
 }
+
+/** 音频获取策略：洛雪源优先（全部失败后回退账号）或账号优先（失败后回退洛雪源）。 */
+export type AudioSourcePriority = 'lx' | 'account';
+export const DEFAULT_AUDIO_SOURCE_PRIORITY: AudioSourcePriority = 'lx';
 
 export interface MusicAccountSession extends KugouAccountContext {
   platform: MusicPlatform;
@@ -25,6 +29,7 @@ export interface MusicAccountSession extends KugouAccountContext {
   apiAccessKey: string;
   stateless: boolean;
   useLuoxue: boolean;
+  audioSourcePriority: AudioSourcePriority;
   lxSource: string[];
   deviceId?: string;
   deviceState?: string;
@@ -72,6 +77,8 @@ export interface UpdateAccountConfigInput {
   name: unknown;
   stateless: unknown;
   useLuoxue: unknown;
+  /** 缺省时保留账号当前的策略。 */
+  audioSourcePriority?: unknown;
   lxSource: unknown;
 }
 
@@ -83,6 +90,7 @@ export const sessionsTemplate: RawMusicAccount[] = [
     api_access_key: '',
     stateless: false,
     useLuoxue: true,
+    audioSourcePriority: 'lx',
     lxSource: []
   },
   {
@@ -92,6 +100,7 @@ export const sessionsTemplate: RawMusicAccount[] = [
     api_access_key: '',
     stateless: false,
     useLuoxue: true,
+    audioSourcePriority: 'lx',
     lxSource: []
   },
   {
@@ -101,6 +110,7 @@ export const sessionsTemplate: RawMusicAccount[] = [
     api_access_key: '',
     stateless: false,
     useLuoxue: true,
+    audioSourcePriority: 'lx',
     lxSource: []
   }
 ];
@@ -127,6 +137,16 @@ function normalizeAccountUseLuoxue(value: unknown): { value: boolean; invalid: b
   if (value === undefined) return { value: true, invalid: false };
   if (typeof value === 'boolean') return { value, invalid: false };
   return { value: false, invalid: true };
+}
+
+export function isAudioSourcePriority(value: unknown): value is AudioSourcePriority {
+  return value === 'lx' || value === 'account';
+}
+
+function normalizeAudioSourcePriority(value: unknown): { value: AudioSourcePriority; invalid: boolean } {
+  if (value === undefined || value === null) return { value: DEFAULT_AUDIO_SOURCE_PRIORITY, invalid: false };
+  if (isAudioSourcePriority(value)) return { value, invalid: false };
+  return { value: DEFAULT_AUDIO_SOURCE_PRIORITY, invalid: true };
 }
 
 function isHttpUrl(value: string): boolean {
@@ -277,6 +297,12 @@ export function loadAccountSessions(storeInput: AccountStoreInput = process.cwd(
           `[accounts] 账号 "${accountName}" 的 useLuoxue 必须是 boolean，已按 false 处理`
         );
       }
+      const audioSourcePriority = normalizeAudioSourcePriority(account.audioSourcePriority);
+      if (audioSourcePriority.invalid) {
+        console.warn(
+          `[accounts] 账号 "${accountName}" 的 audioSourcePriority 必须是 lx 或 account，已按 lx 处理`
+        );
+      }
       parsedSessions.push({
         platform,
         name: accountName,
@@ -284,10 +310,10 @@ export function loadAccountSessions(storeInput: AccountStoreInput = process.cwd(
         apiAccessKey,
         stateless,
         useLuoxue: useLuoxue.value,
+        audioSourcePriority: audioSourcePriority.value,
         lxSource: loadAccountLxSources(account.lxSource, accountName),
         ...(account.deviceId ? { deviceId: String(account.deviceId) } : {}),
         ...(account.deviceState ? { deviceState: String(account.deviceState) } : {}),
-        kugouState: platform === 'kugou' ? normalizeKugouState(account.kugouState, String(account.cookie || '')) : undefined,
         favoriteTrackIds: new Set<string>(),
         userPlaylistIds: new Set<string>(),
         playlistFavorites: new PlaylistFavorites(),
@@ -314,7 +340,6 @@ export function loadAccountSessions(storeInput: AccountStoreInput = process.cwd(
     return true;
   });
 
-  sessions.forEach(session => bindKugouStateStore(session, store));
   const byAccessKey = new Map<string, MusicAccountSession>();
   sessions.forEach((session) => byAccessKey.set(session.apiAccessKey, session));
   console.log(`[accounts] 已注册 ${sessions.length} 个账号`);
@@ -386,7 +411,7 @@ export function updateAccountCookieByAccessKey(
   }
   account.cookie = normalizedCookie;
   const kugouIdentityChanged = platform === 'kugou' && (kugouUserId(session.cookie) !== kugouUserId(normalizedCookie) || kugouEdition(session.cookie) !== kugouEdition(normalizedCookie));
-  store.update(token, { cookie: normalizedCookie, ...deviceFields, ...(kugouIdentityChanged ? { kugouState: undefined } : {}) });
+  store.update(token, { cookie: normalizedCookie, ...deviceFields });
   if (kugouIdentityChanged) {
     session.kugouState = undefined;
     session.kugouPlaylists = undefined;
@@ -449,6 +474,7 @@ export function createAccountWithCookie(
     api_access_key: token,
     stateless: false,
     useLuoxue: platform !== 'ytmusic',
+    audioSourcePriority: DEFAULT_AUDIO_SOURCE_PRIORITY,
     lxSource: [],
     ...(platform === 'qq' ? qqDeviceFields(normalizedCookie) : {})
   };
@@ -461,6 +487,7 @@ export function createAccountWithCookie(
     apiAccessKey: token,
     stateless: false,
     useLuoxue: platform !== 'ytmusic',
+    audioSourcePriority: DEFAULT_AUDIO_SOURCE_PRIORITY,
     lxSource: [],
     ...(account.deviceId ? { deviceId: String(account.deviceId) } : {}),
     ...(account.deviceState ? { deviceState: String(account.deviceState) } : {}),
@@ -472,7 +499,6 @@ export function createAccountWithCookie(
     favoriteArtistsLoaded: false,
     favoriteAlbumsLoaded: false
   };
-  bindKugouStateStore(session, store);
   registry.sessions.push(session);
   registry.byAccessKey.set(token, session);
 
@@ -497,24 +523,21 @@ export function updateAccountConfigByAccessKey(
   if (name.length > 100) throw new Error('名称不能超过 100 个字符');
   if (typeof input.stateless !== 'boolean') throw new Error('stateless 必须是 boolean');
   if (typeof input.useLuoxue !== 'boolean') throw new Error('useLuoxue 必须是 boolean');
+  const priorityInput = input.audioSourcePriority ?? undefined;
+  if (priorityInput !== undefined && !isAudioSourcePriority(priorityInput)) {
+    throw new Error('audioSourcePriority 必须是 lx 或 account');
+  }
+  const audioSourcePriority = priorityInput === undefined ? session.audioSourcePriority : priorityInput;
   const lxSource = normalizeAccountLxSources(input.lxSource);
 
+  // 存储层按 api_access_key 更新，找不到时自行抛错；不必先整表读出再改一份不会落盘的副本。
   const store = resolveAccountStore(storeInput);
-  const rawAccounts = store.list();
-  const target = rawAccounts.find((raw) => (
-    raw && typeof raw === 'object' && String(raw.api_access_key || '').trim() === token
-  ));
-  if (!target) throw new Error('账号数据库中未找到对应 api_access_key');
-
-  target.name = name;
-  target.stateless = input.stateless;
-  target.useLuoxue = input.useLuoxue;
-  target.lxSource = lxSource;
-  store.update(token, { name, stateless: input.stateless, useLuoxue: input.useLuoxue, lxSource });
+  store.update(token, { name, stateless: input.stateless, useLuoxue: input.useLuoxue, audioSourcePriority, lxSource });
 
   session.name = name;
   session.stateless = input.stateless;
   session.useLuoxue = input.useLuoxue;
+  session.audioSourcePriority = audioSourcePriority;
   session.lxSource = lxSource;
   return { session, filePath: store.location };
 }
@@ -540,19 +563,4 @@ export function deleteAccount(apiAccessKey: string, registry: AccountSessionRegi
   session.cookie = ''; session.deviceId = undefined; session.deviceState = undefined;
   session.playlistFavorites.clear();
   session.lxSource = []; session.favoriteArtistsLoaded = false; session.favoriteAlbumsLoaded = false;
-}
-
-function bindKugouStateStore(session: MusicAccountSession, store: AccountStore): void {
-  if (session.platform !== 'kugou') return;
-  session.saveKugouState = async (state: KugouAccountState) => {
-    const edition = kugouEdition(session.cookie);
-    const stored = store.list().find(account => account.api_access_key === session.apiAccessKey);
-    if (!stored || state.userId !== kugouUserId(session.cookie) || state.userId !== kugouUserId(String(stored.cookie || '')) || edition !== kugouEdition(String(stored.cookie || ''))) {
-      throw new Error('酷狗账号已变更，无法保存旧账号歌单标识');
-    }
-    store.update(session.apiAccessKey, { kugouState: state });
-    await store.flush?.();
-    if (state.userId !== kugouUserId(session.cookie) || edition !== kugouEdition(session.cookie)) throw new Error('酷狗账号已变更，无法保存旧账号歌单标识');
-    session.kugouState = state;
-  };
 }
